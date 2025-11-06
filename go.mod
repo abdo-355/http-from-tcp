@@ -1,4 +1,4 @@
-module httpfromtcp
+module github.com/abdo-355/http-from-tcp
 
 go 1.25.3
 
