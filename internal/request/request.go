@@ -23,19 +23,8 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		return nil, err
 	}
 
-	// split the message to different lines and make sure it has
-	// the minimum amount of lines for a valid http/1.1 message which might look like this
-	// GET / HTTP/1.1\r\n
-	// Host: example.com\r\n
-	// \r\n
-	dataLines := strings.Split(string(data), "\r\n")
-	if len(dataLines) < 3 {
-		return nil, fmt.Errorf("Invalid http/1.1 message\nrecieved:%s", string(data))
-	}
-
-	requestLineStr := dataLines[0]
-
-	rl, err := parseRequestLine(requestLineStr)
+	// pass entire request string to parseRequestLine (not just first line)
+	rl, err := parseRequestLine(string(data))
 	if err != nil {
 		return nil, err
 	}
@@ -47,22 +36,32 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	return &req, nil
 }
 
-func parseRequestLine(d string) (RequestLine, error) {
-	// make sure it's a valid request line
-	parts := strings.Split(d, " ")
+func parseRequestLine(rawRequest string) (RequestLine, error) {
+	// Extract first line of the request (the request line)
+	endOfRequestLine := strings.Index(rawRequest, "\r\n")
+	if endOfRequestLine == -1 {
+		return RequestLine{}, fmt.Errorf("Request line not found in request")
+	}
+	requestLine := rawRequest[:endOfRequestLine]
+
+	// parse the extracted request line as before
+	parts := strings.Split(requestLine, " ")
 	if len(parts) < 3 {
-		return RequestLine{}, fmt.Errorf("Invalid request line\nreceived:%s", d)
+		return RequestLine{}, fmt.Errorf("Invalid request line\nreceived:%s", requestLine)
 	}
 
-	// the first part of the request line must be upper case
 	if !isAllUpper(parts[0]) {
-		return RequestLine{}, fmt.Errorf("Invalid request line\nreceived:%s", d)
+		return RequestLine{}, fmt.Errorf("Invalid request line\nreceived:%s", requestLine)
 	}
 
-	// make sure it's http/1.1
-	httpVersion := strings.Split(parts[2], "/")[1]
+	httpVersionParts := strings.Split(parts[2], "/")
+	if len(httpVersionParts) < 2 {
+		return RequestLine{}, fmt.Errorf("Invalid HTTP version format\nreceived:%s", parts[2])
+	}
+
+	httpVersion := httpVersionParts[1]
 	if httpVersion != "1.1" {
-		return RequestLine{}, fmt.Errorf("unsupported http version make sure it's http/1.1\version received:%s", parts[2])
+		return RequestLine{}, fmt.Errorf("unsupported HTTP version, expected http/1.1, received:%s", parts[2])
 	}
 
 	return RequestLine{
