@@ -42,7 +42,12 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		return 0, false, fmt.Errorf("%s has invalid field name characters", key)
 	}
 
-	h[key] = strings.TrimSpace(parts[1])
+	// first check if the key exists and if it does just concatenate the value
+	if h[key] == "" {
+		h[key] = strings.TrimSpace(parts[1])
+	} else {
+		h[key] = h[key] + ", " + strings.TrimSpace(parts[1])
+	}
 
 	return len(data[:idx]) + 2, false, nil
 }

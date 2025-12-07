@@ -64,6 +64,13 @@ func TestHeadersParse(t *testing.T) {
 			expectedHeaders: Headers{},
 			expectError:     true,
 		},
+		{
+			name:            "Valid duplicate headers with initial matching header",
+			initialHeaders:  Headers{"set-person": "initial-value"},
+			data:            []byte("Set-Person: lane-loves-go\r\nSet-Person: prime-loves-zig\r\nSet-Person: tj-loves-ocaml\r\n\r\n"),
+			expectedHeaders: Headers{"set-person": "initial-value, lane-loves-go, prime-loves-zig, tj-loves-ocaml"},
+			expectError:     false,
+		},
 	}
 
 	for _, tc := range testCases {
