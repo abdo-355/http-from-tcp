@@ -37,7 +37,37 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		return 0, false, fmt.Errorf("invalid header structure. found a space between the header key and the colon")
 	}
 
+	key = strings.ToLower(key)
+	if ValidHeaderFieldName(key) {
+		return 0, false, fmt.Errorf("%s has invalid field name characters", key)
+	}
+
 	h[key] = strings.TrimSpace(parts[1])
 
 	return len(data[:idx]) + 2, false, nil
+}
+
+func ValidHeaderFieldName(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+
+		switch {
+		case c >= 'a' && c <= 'z':
+			continue
+		case c >= 'A' && c <= 'Z':
+			continue
+		case c >= '0' && c <= '9':
+			continue
+		case c == '!' || c == '#' || c == '$' || c == '%' || c == '&':
+			continue
+		case c == '\'' || c == '*' || c == '+' || c == '-' || c == '.':
+			continue
+		case c == '^' || c == '_' || c == '`' || c == '|' || c == '~':
+			continue
+		default:
+			// If we reach here, the character is invalid
+			return true
+		}
+	}
+	return false
 }

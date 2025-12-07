@@ -18,22 +18,22 @@ func TestHeadersParse(t *testing.T) {
 		{
 			name:            "Valid single header",
 			initialHeaders:  NewHeaders(),
-			data:            []byte("Host: localhost:42069\r\n\r\n"),
-			expectedHeaders: Headers{"Host": "localhost:42069"},
+			data:            []byte("HOST: localhost:42069\r\n\r\n"),
+			expectedHeaders: Headers{"host": "localhost:42069"},
 			expectError:     false,
 		},
 		{
 			name:            "Valid single header with extra whitespace",
 			initialHeaders:  NewHeaders(),
-			data:            []byte(" Host: localhost:42069 \r\n\r\n"),
-			expectedHeaders: Headers{"Host": "localhost:42069"},
+			data:            []byte(" HOST: localhost:42069 \r\n\r\n"),
+			expectedHeaders: Headers{"host": "localhost:42069"},
 			expectError:     false,
 		},
 		{
 			name:            "Valid 2 headers with existing headers",
 			initialHeaders:  Headers{"host": "localhost:42069"},
-			data:            []byte("User-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n"),
-			expectedHeaders: Headers{"host": "localhost:42069", "User-Agent": "curl/7.81.0", "Accept": "*/*"},
+			data:            []byte("USER-AGENT: curl/7.81.0\r\nACCEPT: */*\r\n\r\n"),
+			expectedHeaders: Headers{"host": "localhost:42069", "user-agent": "curl/7.81.0", "accept": "*/*"},
 			expectError:     false,
 		},
 		{
@@ -46,7 +46,21 @@ func TestHeadersParse(t *testing.T) {
 		{
 			name:            "Invalid spacing header",
 			initialHeaders:  NewHeaders(),
-			data:            []byte("       Host : localhost:42069       \r\n\r\n"),
+			data:            []byte("       HOST : localhost:42069       \r\n\r\n"),
+			expectedHeaders: Headers{},
+			expectError:     true,
+		},
+		{
+			name:            "Valid header with mixed case key",
+			initialHeaders:  NewHeaders(),
+			data:            []byte("Content-Type: application/json\r\n\r\n"),
+			expectedHeaders: Headers{"content-type": "application/json"},
+			expectError:     false,
+		},
+		{
+			name:            "Invalid character in header key",
+			initialHeaders:  NewHeaders(),
+			data:            []byte("H©st: localhost:42069\r\n\r\n"),
 			expectedHeaders: Headers{},
 			expectError:     true,
 		},
@@ -72,6 +86,52 @@ func TestHeadersParse(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, tc.expectedHeaders, headers)
 			}
+		})
+	}
+}
+
+func TestValidHeaderFieldName(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{
+			name:     "Valid lowercase header",
+			input:    "host",
+			expected: false,
+		},
+		{
+			name:     "Valid header with hyphen",
+			input:    "user-agent",
+			expected: false,
+		},
+		{
+			name:     "Valid header with allowed special chars",
+			input:    "x-custom-header!",
+			expected: false,
+		},
+		{
+			name:     "Invalid header with copyright symbol",
+			input:    "H©st",
+			expected: true,
+		},
+		{
+			name:     "Invalid header with space",
+			input:    "host header",
+			expected: true,
+		},
+		{
+			name:     "Invalid header with emoji",
+			input:    "host😀",
+			expected: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := ValidHeaderFieldName(tc.input)
+			assert.Equal(t, tc.expected, result)
 		})
 	}
 }
