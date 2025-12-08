@@ -13,7 +13,12 @@ func main() {
 	if err != nil {
 		fmt.Println("an error occurend when opening tcp connection:", err)
 	}
-	defer listener.Close()
+
+	defer func() {
+		if err := listener.Close(); err != nil {
+			log.Printf("Error closing listener: %v", err)
+		}
+	}()
 
 	for {
 		conn, err := listener.Accept()
@@ -31,5 +36,9 @@ func main() {
 		fmt.Println("- Method:", req.RequestLine.Method)
 		fmt.Println("- Target:", req.RequestLine.RequestTarget)
 		fmt.Println("- Version:", req.RequestLine.HTTPVersion)
+		fmt.Println("Headers:")
+		for k, v := range req.Headers {
+			fmt.Printf("- %s: %s\n", k, v)
+		}
 	}
 }
