@@ -1,3 +1,4 @@
+// Package request handles everything related to parsing the data from the tcp connection
 package request
 
 import (
@@ -5,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/abdo-355/http-from-tcp/internal/headers"
 )
 
 type requestState int
@@ -12,16 +15,18 @@ type requestState int
 const (
 	Initialized requestState = iota
 	Done
+	ParsingHeaders
 )
 
 type Request struct {
 	RequestLine RequestLine
+	Headers     headers.Headers
 
 	state requestState
 }
 
 type RequestLine struct {
-	HttpVersion   string
+	HTTPVersion   string
 	RequestTarget string
 	Method        string
 }
@@ -45,7 +50,9 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		}
 		bytesRead, err := reader.Read(buf[readToIndex:])
 		if err == io.EOF {
-			r.state = Done
+			if r.state == ParsingHeaders {
+				return nil, fmt.Errorf("reached EOF before getting the full request")
+			}
 			break
 		}
 		readToIndex += bytesRead
@@ -54,7 +61,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			return nil, err
 		}
 
-		bytesParsed, err := r.parse(buf)
+		bytesParsed, err := r.parse(buf[:readToIndex])
 		if err != nil {
 			return nil, err
 		}
@@ -112,7 +119,7 @@ func requestLineFromString(str string) (*RequestLine, error) {
 	return &RequestLine{
 		Method:        method,
 		RequestTarget: requestTarget,
-		HttpVersion:   versionParts[1],
+		HTTPVersion:   versionParts[1],
 	}, nil
 }
 
@@ -121,21 +128,45 @@ func (r *Request) parse(data []byte) (int, error) {
 		return 0, fmt.Errorf("error: trying to read data in a done state")
 	}
 
-	// make sure the state is Initialized
-	if r.state != Initialized {
-		return 0, fmt.Errorf("error: unkown state")
+	var bytesNum int
+	switch r.state {
+	case Initialized:
+		rl, bn, err := parseRequestLine(data)
+		if err != nil {
+			return 0, err
+		}
+
+		if bn == 0 {
+			return 0, nil
+		}
+
+		r.RequestLine = *rl
+		r.state = ParsingHeaders
+		bytesNum = bn
+		r.Headers = headers.NewHeaders()
+	case ParsingHeaders:
+		bytesNum = 0
+	default:
+		return 0, fmt.Errorf("unexpected state")
 	}
 
-	rl, bytesNum, err := parseRequestLine(data)
-	if err != nil {
-		return 0, err
+	for r.state == ParsingHeaders {
+		reminingData := data[bytesNum:]
+		n, finished, err := r.Headers.Parse(reminingData)
+		if err != nil {
+			return bytesNum, err
+		}
+		if n == 0 {
+			return bytesNum, nil
+		}
+		bytesNum += n
+
+		if finished {
+			r.state = Done
+		}
+
 	}
 
-	if bytesNum == 0 {
-		return 0, nil
-	}
-
-	r.RequestLine = *rl
-	r.state = Done
+	// Return total bytes parsed
 	return bytesNum, nil
 }

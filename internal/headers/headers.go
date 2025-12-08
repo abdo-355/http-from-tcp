@@ -5,9 +5,9 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
-
-	"github.com/abdo-355/http-from-tcp/internal/request"
 )
+
+const CRLF = "\r\n"
 
 type Headers map[string]string
 
@@ -16,7 +16,7 @@ func NewHeaders() Headers {
 }
 
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
-	idx := bytes.Index(data, []byte(request.CRLF))
+	idx := bytes.Index(data, []byte(CRLF))
 
 	if idx == -1 {
 		return 0, false, nil
@@ -38,7 +38,7 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	}
 
 	key = strings.ToLower(key)
-	if ValidHeaderFieldName(key) {
+	if InvalidHeaderFieldName(key) {
 		return 0, false, fmt.Errorf("%s has invalid field name characters", key)
 	}
 
@@ -52,7 +52,7 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	return len(data[:idx]) + 2, false, nil
 }
 
-func ValidHeaderFieldName(s string) bool {
+func InvalidHeaderFieldName(s string) bool {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 
