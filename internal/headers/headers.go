@@ -9,10 +9,12 @@ import (
 
 const CRLF = "\r\n"
 
-type Headers map[string]string
+type Headers struct {
+	M map[string]string
+}
 
 func NewHeaders() Headers {
-	return map[string]string{}
+	return Headers{M: make(map[string]string)}
 }
 
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
@@ -43,10 +45,10 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	}
 
 	// first check if the key exists and if it does just concatenate the value
-	if h[key] == "" {
-		h[key] = strings.TrimSpace(parts[1])
+	if h.M[key] == "" {
+		h.M[key] = strings.TrimSpace(parts[1])
 	} else {
-		h[key] = h[key] + ", " + strings.TrimSpace(parts[1])
+		h.M[key] = h.M[key] + ", " + strings.TrimSpace(parts[1])
 	}
 
 	return len(data[:idx]) + 2, false, nil
@@ -75,4 +77,15 @@ func InvalidHeaderFieldName(s string) bool {
 		}
 	}
 	return false
+}
+
+func (h *Headers) Get(key string) string {
+	// it should be case insensitive
+	key = strings.ToLower(key)
+
+	return h.M[key]
+}
+
+func (h *Headers) Len() int {
+	return len(h.M)
 }

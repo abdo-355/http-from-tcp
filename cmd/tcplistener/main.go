@@ -37,8 +37,10 @@ func main() {
 		fmt.Println("- Target:", req.RequestLine.RequestTarget)
 		fmt.Println("- Version:", req.RequestLine.HTTPVersion)
 		fmt.Println("Headers:")
-		for k, v := range req.Headers {
+		for k, v := range req.Headers.M {
 			fmt.Printf("- %s: %s\n", k, v)
 		}
+		fmt.Println("Body:")
+		fmt.Println(string(req.Body))
 	}
 }

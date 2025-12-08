@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/abdo-355/http-from-tcp/internal/headers"
@@ -16,11 +17,13 @@ const (
 	Initialized requestState = iota
 	Done
 	ParsingHeaders
+	ParsingBody
 )
 
 type Request struct {
 	RequestLine RequestLine
 	Headers     headers.Headers
+	Body        []byte
 
 	state requestState
 }
@@ -54,8 +57,11 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		buf = growBuffer(buf, bufferOffset)
 		bytesRead, err := reader.Read(buf[bufferOffset:])
 		if err == io.EOF {
-			if r.state == ParsingHeaders {
+			switch r.state {
+			case ParsingHeaders:
 				return nil, fmt.Errorf("unexpected EOF while parsing headers")
+			case ParsingBody:
+				return nil, fmt.Errorf("unexpected EOF while parsing Body")
 			}
 			break
 		}
@@ -161,6 +167,30 @@ func (r *Request) parse(data []byte) (int, error) {
 		bytesParsed += n
 
 		if finished {
+			r.state = ParsingBody
+		}
+
+	}
+
+	if r.state == ParsingBody {
+		cl := r.Headers.Get("content-length")
+		if cl == "" || cl == "0" {
+			r.state = Done
+			return bytesParsed, nil
+		}
+		num, err := strconv.Atoi(cl)
+		if err != nil {
+			return bytesParsed, fmt.Errorf("invalid content-length value. Wanted numeric value recieved: %s", cl)
+		}
+
+		body := data[bytesParsed:]
+
+		r.Body = append(r.Body, body...)
+		bytesParsed += len(body)
+
+		if len(r.Body) > num {
+			return bytesParsed, fmt.Errorf("content-length can't be smaller than the length of the body")
+		} else if len(r.Body) == num {
 			r.state = Done
 		}
 
