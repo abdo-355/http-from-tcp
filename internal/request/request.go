@@ -36,61 +36,65 @@ const (
 	bufferSize = 8
 )
 
+func growBuffer(buf []byte, offset int) []byte {
+	if offset >= len(buf) {
+		biggerBuf := make([]byte, len(buf)*2)
+		copy(biggerBuf, buf)
+		return biggerBuf
+	}
+	return buf
+}
+
 func RequestFromReader(reader io.Reader) (*Request, error) {
 	buf := make([]byte, bufferSize)
-	// to keep track of how much data we've read from the io.Reader into the buffer
-	readToIndex := 0
+	bufferOffset := 0
 	r := Request{state: Initialized}
 
 	for r.state != Done {
-		if readToIndex >= len(buf) {
-			biggerBuf := make([]byte, len(buf)*2)
-			copy(biggerBuf, buf)
-			buf = biggerBuf
-		}
-		bytesRead, err := reader.Read(buf[readToIndex:])
+		buf = growBuffer(buf, bufferOffset)
+		bytesRead, err := reader.Read(buf[bufferOffset:])
 		if err == io.EOF {
 			if r.state == ParsingHeaders {
-				return nil, fmt.Errorf("reached EOF before getting the full request")
+				return nil, fmt.Errorf("unexpected EOF while parsing headers")
 			}
 			break
 		}
-		readToIndex += bytesRead
+		bufferOffset += bytesRead
 
 		if err != nil {
 			return nil, err
 		}
 
-		bytesParsed, err := r.parse(buf[:readToIndex])
+		bytesParsed, err := r.parse(buf[:bufferOffset])
 		if err != nil {
 			return nil, err
 		}
 
 		// Remove the data that was parsed successfully from the buffer (this keeps our buffer small and memory efficient).
 		copy(buf, buf[bytesParsed:])
-		readToIndex -= bytesParsed
+		bufferOffset -= bytesParsed
 	}
 
 	return &r, nil
 }
 
 func parseRequestLine(data []byte) (*RequestLine, int, error) {
-	idx := bytes.Index(data, []byte(CRLF))
-	if idx == -1 {
+	crlfIndex := bytes.Index(data, []byte(CRLF))
+	if crlfIndex == -1 {
 		return nil, 0, nil
 	}
-	requestLineText := string(data[:idx])
+	requestLineText := string(data[:crlfIndex])
 	requestLine, err := requestLineFromString(requestLineText)
 	if err != nil {
 		return nil, 0, err
 	}
-	return requestLine, idx + 2, nil
+	return requestLine, crlfIndex + 2, nil
 }
 
 func requestLineFromString(str string) (*RequestLine, error) {
 	parts := strings.Split(str, " ")
 	if len(parts) != 3 {
-		return nil, fmt.Errorf("poorly formatted request-line: %s", str)
+		return nil, fmt.Errorf("malformed request-line: %s", str)
 	}
 
 	method := parts[0]
@@ -125,41 +129,36 @@ func requestLineFromString(str string) (*RequestLine, error) {
 
 func (r *Request) parse(data []byte) (int, error) {
 	if r.state == Done {
-		return 0, fmt.Errorf("error: trying to read data in a done state")
+		return 0, fmt.Errorf("cannot parse data in done state")
 	}
 
-	var bytesNum int
-	switch r.state {
-	case Initialized:
-		rl, bn, err := parseRequestLine(data)
+	bytesParsed := 0
+	if r.state == Initialized {
+		rl, bytesConsumed, err := parseRequestLine(data)
 		if err != nil {
 			return 0, err
 		}
 
-		if bn == 0 {
+		if bytesConsumed == 0 {
 			return 0, nil
 		}
 
 		r.RequestLine = *rl
 		r.state = ParsingHeaders
-		bytesNum = bn
+		bytesParsed = bytesConsumed
 		r.Headers = headers.NewHeaders()
-	case ParsingHeaders:
-		bytesNum = 0
-	default:
-		return 0, fmt.Errorf("unexpected state")
 	}
 
 	for r.state == ParsingHeaders {
-		reminingData := data[bytesNum:]
-		n, finished, err := r.Headers.Parse(reminingData)
+		remainingData := data[bytesParsed:]
+		n, finished, err := r.Headers.Parse(remainingData)
 		if err != nil {
-			return bytesNum, err
+			return bytesParsed, err
 		}
 		if n == 0 {
-			return bytesNum, nil
+			return bytesParsed, nil
 		}
-		bytesNum += n
+		bytesParsed += n
 
 		if finished {
 			r.state = Done
@@ -167,6 +166,5 @@ func (r *Request) parse(data []byte) (int, error) {
 
 	}
 
-	// Return total bytes parsed
-	return bytesNum, nil
+	return bytesParsed, nil
 }
