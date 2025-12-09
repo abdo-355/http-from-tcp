@@ -6,6 +6,8 @@ import (
 	"net"
 	"strconv"
 	"sync/atomic"
+
+	"github.com/abdo-355/http-from-tcp/internal/response"
 )
 
 type Server struct {
@@ -48,18 +50,9 @@ func (s *Server) listen() {
 
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
-	msg := []byte("HTTP/1.1 200 OK\r\n" +
-		"Content-Type: text/plain\r\n" +
-		"Content-Length: 12\r\n" +
-		"\r\n" +
-		"Hello World!")
 
-	n, err := conn.Write(msg)
-	if err != nil {
-		log.Printf("Write failed: %v", err)
-		return
-	}
-	if n != len(msg) {
-		log.Printf("Partial write: %d/%d bytes", n, len(msg))
-	}
+	h := response.GetDefaultHeaders(0)
+
+	response.WriteStatusLine(conn, response.StatusOk)
+	response.WriteHeaders(conn, h)
 }
