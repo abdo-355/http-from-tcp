@@ -102,3 +102,25 @@ func (w *Writer) WriteBody(b []byte) (int, error) {
 
 	return n, nil
 }
+
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	chunkSizeHex := fmt.Sprintf("%x", len(p))
+	var bytesWritten int
+	n, err := w.Write([]byte(chunkSizeHex + "\r\n"))
+	if err != nil {
+		return 0, err
+	}
+	bytesWritten += n
+
+	n, err = w.Write(append(p, "\r\n"...))
+	if err != nil {
+		return 0, err
+	}
+	bytesWritten += n
+
+	return bytesWritten, nil
+}
+
+func (w *Writer) WriteChunkedBodyDone() (int, error) {
+	return w.Write([]byte("0\r\n\r\n"))
+}

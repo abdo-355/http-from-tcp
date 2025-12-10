@@ -1,10 +1,13 @@
 package main
 
 import (
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/abdo-355/http-from-tcp/internal/headers"
@@ -35,9 +38,46 @@ func main() {
 }
 
 func handler(w *response.Writer, req *request.Request) {
+	target := req.RequestLine.RequestTarget
+	if strings.HasPrefix(target, "/httpbin/") {
+		target = strings.TrimPrefix(target, "/httpbin")
+
+		res, err := http.Get("https://httpbin.org" + target)
+		if err != nil {
+			log.Fatal("error requesting the target:", err.Error())
+		}
+		defer res.Body.Close()
+
+		h := headers.NewHeaders()
+		h.Set("content-type", "text/html")
+		h.Set("transfer-incoding", "chunked")
+		h.Set("connection", "close")
+		w.WriteStatusLine(response.StatusOk)
+		w.WriteHeaders(h)
+
+		buff := make([]byte, 1024)
+		for {
+			n, err := res.Body.Read(buff)
+			if n > 0 {
+				w.WriteChunkedBody(buff)
+			}
+
+			if err == io.EOF {
+				w.WriteChunkedBodyDone()
+				break
+			}
+
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+		}
+
+		return
+	}
+
 	var status response.StatusCode
 	var html string
-	switch req.RequestLine.RequestTarget {
+	switch target {
 	case "/yourproblem":
 		status = response.StatusBadRequest
 		html = `<html>
@@ -72,6 +112,7 @@ func handler(w *response.Writer, req *request.Request) {
   </body>
 </html>`
 	}
+
 	body := []byte(html)
 	h := headers.NewHeaders()
 	h.Set("content-type", "text/html")
