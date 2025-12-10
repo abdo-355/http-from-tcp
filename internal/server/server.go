@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"io"
 	"log"
 	"net"
@@ -18,7 +17,7 @@ type Server struct {
 	state    atomic.Bool
 }
 
-type Handler func(w io.Writer, req *request.Request) *HandlerError
+type Handler func(w *response.Writer, req *request.Request)
 
 type HandlerError struct {
 	Status  response.StatusCode
@@ -26,13 +25,16 @@ type HandlerError struct {
 }
 
 func (he *HandlerError) Write(w io.Writer) {
-	response.WriteStatusLine(w, he.Status)
+	writer := response.Writer{
+		Conn: w,
+	}
+	writer.WriteStatusLine(he.Status)
 	msg := []byte(he.Message)
 
 	hdrs := response.GetDefaultHeaders(len(msg))
 
-	response.WriteHeaders(w, hdrs)
-	w.Write(msg)
+	writer.WriteHeaders(hdrs)
+	writer.WriteBody(msg)
 }
 
 func Serve(port int, handler Handler) (*Server, error) {
@@ -82,16 +84,9 @@ func (s *Server) handle(conn net.Conn) {
 		return
 	}
 
-	buf := bytes.NewBuffer([]byte{})
-	hErr := s.handler(buf, req)
-	if hErr != nil {
-		hErr.Write(conn)
-		return
+	w := response.Writer{
+		Conn: conn,
 	}
 
-	b := buf.Bytes()
-	response.WriteStatusLine(conn, response.StatusOk)
-	headers := response.GetDefaultHeaders(len(b))
-	response.WriteHeaders(conn, headers)
-	conn.Write(b)
+	s.handler(&w, req)
 }

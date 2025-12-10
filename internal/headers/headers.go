@@ -89,3 +89,7 @@ func (h *Headers) Get(key string) string {
 func (h *Headers) Len() int {
 	return len(h.M)
 }
+
+func (h *Headers) Set(key, value string) {
+	h.M[strings.ToLower(key)] = value
+}
