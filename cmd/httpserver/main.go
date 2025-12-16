@@ -1,3 +1,5 @@
+// Command httpserver starts an HTTP server that proxies certain requests to httpbin.org
+// and serves static HTML responses for other endpoints.
 package main
 
 import (

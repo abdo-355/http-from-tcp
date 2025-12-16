@@ -1,3 +1,5 @@
+// Command tcplistener listens for TCP connections on port 42069,
+// parses HTTP requests from them, and prints the request details.
 package main
 
 import (

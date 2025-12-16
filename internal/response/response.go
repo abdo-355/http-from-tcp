@@ -1,3 +1,4 @@
+// Package response provides functionality for writing HTTP responses over connections.
 package response
 
 import (

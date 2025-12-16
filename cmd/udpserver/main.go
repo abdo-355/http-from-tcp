@@ -1,3 +1,5 @@
+// Command udpserver is a UDP client that reads input from stdin
+// and sends it as UDP packets to localhost:42069.
 package main
 
 import (
