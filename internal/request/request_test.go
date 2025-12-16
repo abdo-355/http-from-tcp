@@ -190,3 +190,130 @@ func TestBodyParse(t *testing.T) {
 		assert.Equal(t, "", string(r.Body))
 	})
 }
+
+func TestParseRequestLine(t *testing.T) {
+	testCases := []struct {
+		name        string
+		data        []byte
+		expectedRL  *RequestLine
+		expectedN   int
+		expectError bool
+	}{
+		{
+			name: "Valid request line",
+			data: []byte("GET / HTTP/1.1\r\nHost: example.com\r\n\r\n"),
+			expectedRL: &RequestLine{
+				Method:        "GET",
+				RequestTarget: "/",
+				HTTPVersion:   "1.1",
+			},
+			expectedN:   16,
+			expectError: false,
+		},
+		{
+			name:        "No CRLF",
+			data:        []byte("GET / HTTP/1.1Host: example.com"),
+			expectedRL:  nil,
+			expectedN:   0,
+			expectError: false,
+		},
+		{
+			name:        "Invalid request line",
+			data:        []byte("INVALID\r\nHost: example.com\r\n\r\n"),
+			expectedRL:  nil,
+			expectedN:   0,
+			expectError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			rl, n, err := parseRequestLine(tc.data)
+			if tc.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				if tc.expectedRL != nil {
+					assert.Equal(t, tc.expectedRL, rl)
+				} else {
+					assert.Nil(t, rl)
+				}
+				assert.Equal(t, tc.expectedN, n)
+			}
+		})
+	}
+}
+
+func TestRequestLineFromString(t *testing.T) {
+	testCases := []struct {
+		name        string
+		input       string
+		expected    *RequestLine
+		expectError bool
+	}{
+		{
+			name:  "Valid GET",
+			input: "GET / HTTP/1.1",
+			expected: &RequestLine{
+				Method:        "GET",
+				RequestTarget: "/",
+				HTTPVersion:   "1.1",
+			},
+			expectError: false,
+		},
+		{
+			name:        "Too few parts",
+			input:       "GET /",
+			expected:    nil,
+			expectError: true,
+		},
+		{
+			name:        "Invalid method lowercase",
+			input:       "get / HTTP/1.1",
+			expected:    nil,
+			expectError: true,
+		},
+		{
+			name:        "Invalid HTTP version",
+			input:       "GET / HTTP/2.0",
+			expected:    nil,
+			expectError: true,
+		},
+		{
+			name:        "Malformed version",
+			input:       "GET / INVALID",
+			expected:    nil,
+			expectError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			rl, err := requestLineFromString(tc.input)
+			if tc.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tc.expected, rl)
+			}
+		})
+	}
+}
+
+func TestRequest_Parse(t *testing.T) {
+	t.Run("Parse done state", func(t *testing.T) {
+		r := &Request{state: Done}
+		n, err := r.parse([]byte("some data"))
+		assert.Equal(t, 0, n)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot parse data in done state")
+	})
+
+	t.Run("Parse initialized with incomplete request line", func(t *testing.T) {
+		r := &Request{state: Initialized}
+		n, err := r.parse([]byte("GET"))
+		assert.Equal(t, 0, n)
+		assert.NoError(t, err)
+		assert.Equal(t, Initialized, r.state)
+	})
+}

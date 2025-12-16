@@ -142,3 +142,99 @@ func TestInvalidHeaderFieldName(t *testing.T) {
 		})
 	}
 }
+
+func TestNewHeaders(t *testing.T) {
+	h := NewHeaders()
+	assert.NotNil(t, h.M)
+	assert.Equal(t, 0, len(h.M))
+}
+
+func TestHeaders_Get(t *testing.T) {
+	h := Headers{M: map[string]string{
+		"host":         "example.com",
+		"content-type": "application/json",
+	}}
+
+	testCases := []struct {
+		name     string
+		key      string
+		expected string
+	}{
+		{
+			name:     "Existing key lowercase",
+			key:      "host",
+			expected: "example.com",
+		},
+		{
+			name:     "Existing key mixed case",
+			key:      "Host",
+			expected: "example.com",
+		},
+		{
+			name:     "Non-existing key",
+			key:      "nonexistent",
+			expected: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := h.Get(tc.key)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestHeaders_Len(t *testing.T) {
+	testCases := []struct {
+		name     string
+		headers  Headers
+		expected int
+	}{
+		{
+			name:     "Empty headers",
+			headers:  NewHeaders(),
+			expected: 0,
+		},
+		{
+			name: "One header",
+			headers: Headers{M: map[string]string{
+				"host": "example.com",
+			}},
+			expected: 1,
+		},
+		{
+			name: "Multiple headers",
+			headers: Headers{M: map[string]string{
+				"host":         "example.com",
+				"content-type": "application/json",
+				"user-agent":   "curl",
+			}},
+			expected: 3,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := tc.headers.Len()
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestHeaders_Set(t *testing.T) {
+	h := NewHeaders()
+
+	h.Set("Host", "example.com")
+	assert.Equal(t, "example.com", h.Get("host"))
+
+	h.Set("host", "newhost.com") // Overwrite
+	assert.Equal(t, "newhost.com", h.Get("host"))
+}
+
+func TestHeaders_SetTrailer(t *testing.T) {
+	h := Headers{M: make(map[string]string)}
+
+	h.SetTrailer("Checksum", "abc123")
+	assert.Equal(t, "abc123", h.M["Checksum"]) // Trailers are case-sensitive
+}
