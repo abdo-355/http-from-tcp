@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"log"
 	"net/http"
@@ -48,19 +50,27 @@ func handler(w *response.Writer, req *request.Request) {
 		}
 		defer res.Body.Close()
 
+		w.WriteStatusLine(response.StatusOk)
+
 		h := headers.NewHeaders()
 		h.Set("content-type", "text/html")
-		h.Set("transfer-incoding", "chunked")
-		h.Set("connection", "close")
-		w.WriteStatusLine(response.StatusOk)
+		h.Set("transfer-encoding", "chunked")
+		h.Set("Trailer", "X-Content-SHA256, X-Content-Length")
 		w.WriteHeaders(h)
 
 		buff := make([]byte, 1024)
+		cl := 0
+		hash := sha256.New()
 		for {
 			n, err := res.Body.Read(buff)
 			if n > 0 {
-				w.WriteChunkedBody(buff)
+				_, err = w.WriteChunkedBody(buff[:n], hash)
+				if err != nil {
+					log.Fatal("error writing chunked body:", err)
+				}
 			}
+
+			cl += n
 
 			if err == io.EOF {
 				w.WriteChunkedBodyDone()
@@ -71,6 +81,14 @@ func handler(w *response.Writer, req *request.Request) {
 				log.Fatal(err.Error())
 			}
 		}
+
+		hashValue := hash.Sum(nil)
+
+		t := headers.NewHeaders()
+
+		t.SetTrailer("X-Content-Sha256", hex.EncodeToString(hashValue))
+		t.SetTrailer("X-Content-Length", strconv.Itoa(cl))
+		w.WriteTrailers(t)
 
 		return
 	}

@@ -93,3 +93,7 @@ func (h *Headers) Len() int {
 func (h *Headers) Set(key, value string) {
 	h.M[strings.ToLower(key)] = value
 }
+
+func (h *Headers) SetTrailer(key, value string) {
+	h.M[key] = value
+}

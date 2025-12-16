@@ -2,6 +2,7 @@ package response
 
 import (
 	"fmt"
+	"hash"
 	"io"
 	"strconv"
 
@@ -27,6 +28,7 @@ const (
 	WriteStatusLine WriterState = iota
 	WriteHeaders
 	WriteBody
+	WriteTrailers
 )
 
 func (w *Writer) Write(data []byte) (n int, err error) {
@@ -103,7 +105,7 @@ func (w *Writer) WriteBody(b []byte) (int, error) {
 	return n, nil
 }
 
-func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+func (w *Writer) WriteChunkedBody(p []byte, h hash.Hash) (int, error) {
 	chunkSizeHex := fmt.Sprintf("%x", len(p))
 	var bytesWritten int
 	n, err := w.Write([]byte(chunkSizeHex + "\r\n"))
@@ -118,9 +120,33 @@ func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
 	}
 	bytesWritten += n
 
-	return bytesWritten, nil
+	_, err = h.Write(p)
+
+	return bytesWritten, err
 }
 
 func (w *Writer) WriteChunkedBodyDone() (int, error) {
-	return w.Write([]byte("0\r\n\r\n"))
+	w.State = WriteTrailers
+	return w.Write([]byte("0\r\n"))
+}
+
+func (w *Writer) WriteTrailers(h headers.Headers) error {
+
+	if w.State != WriteTrailers {
+		return fmt.Errorf("invalid operations order. make sure this runs last")
+	}
+	for k, v := range h.M {
+		_, err := w.Write([]byte(k + ": " + v + "\r\n"))
+
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err := w.Write([]byte("\r\n"))
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
