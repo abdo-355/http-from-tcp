@@ -20,7 +20,7 @@ import (
 	"github.com/abdo-355/http-from-tcp/internal/server"
 )
 
-const port = 42069
+const port = 8080
 
 func main() {
 	server, err := server.Serve(port, handler)

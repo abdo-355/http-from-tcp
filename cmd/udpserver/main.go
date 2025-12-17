@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	addr, err := net.ResolveUDPAddr("udp", "localhost:42069")
+	addr, err := net.ResolveUDPAddr("udp", "localhost:8080")
 	if err != nil {
 		log.Fatal("failed to ResolveUDPAddr:", err)
 	}
