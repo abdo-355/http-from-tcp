@@ -95,6 +95,23 @@ func handler(w *response.Writer, req *request.Request) {
 		return
 	}
 
+	if target == "/video" && req.RequestLine.Method == "GET" {
+		data, err := os.ReadFile("./assets/vim.mp4")
+		if err != nil {
+			log.Fatal("error reading the file:", err)
+		}
+
+		h := headers.NewHeaders()
+		h.Set("content-type", "video/mp4")
+		h.Set("content-length", strconv.Itoa(len(data)))
+		h.Set("connection", "close")
+		w.WriteStatusLine(response.StatusOk)
+		w.WriteHeaders(h)
+		w.WriteBody(data)
+
+		return
+	}
+
 	var status response.StatusCode
 	var html string
 	switch target {
