@@ -18,22 +18,22 @@ func TestHeadersParse(t *testing.T) {
 		{
 			name:            "Valid single header",
 			initialHeaders:  NewHeaders(),
-			data:            []byte("HOST: localhost:42069\r\n\r\n"),
-			expectedHeaders: Headers{M: map[string]string{"host": "localhost:42069"}},
+			data:            []byte("HOST: localhost:8080\r\n\r\n"),
+			expectedHeaders: Headers{M: map[string]string{"host": "localhost:8080"}},
 			expectError:     false,
 		},
 		{
 			name:            "Valid single header with extra whitespace",
 			initialHeaders:  NewHeaders(),
-			data:            []byte(" HOST: localhost:42069 \r\n\r\n"),
-			expectedHeaders: Headers{M: map[string]string{"host": "localhost:42069"}},
+			data:            []byte(" HOST: localhost:8080 \r\n\r\n"),
+			expectedHeaders: Headers{M: map[string]string{"host": "localhost:8080"}},
 			expectError:     false,
 		},
 		{
 			name:            "Valid 2 headers with existing headers",
-			initialHeaders:  Headers{M: map[string]string{"host": "localhost:42069"}},
+			initialHeaders:  Headers{M: map[string]string{"host": "localhost:8080"}},
 			data:            []byte("USER-AGENT: curl/7.81.0\r\nACCEPT: */*\r\n\r\n"),
-			expectedHeaders: Headers{M: map[string]string{"host": "localhost:42069", "user-agent": "curl/7.81.0", "accept": "*/*"}},
+			expectedHeaders: Headers{M: map[string]string{"host": "localhost:8080", "user-agent": "curl/7.81.0", "accept": "*/*"}},
 			expectError:     false,
 		},
 		{
@@ -46,7 +46,7 @@ func TestHeadersParse(t *testing.T) {
 		{
 			name:            "Invalid spacing header",
 			initialHeaders:  NewHeaders(),
-			data:            []byte("       HOST : localhost:42069       \r\n\r\n"),
+			data:            []byte("       HOST : localhost:8080       \r\n\r\n"),
 			expectedHeaders: Headers{M: map[string]string{}},
 			expectError:     true,
 		},
@@ -60,7 +60,7 @@ func TestHeadersParse(t *testing.T) {
 		{
 			name:            "Invalid character in header key",
 			initialHeaders:  NewHeaders(),
-			data:            []byte("H©st: localhost:42069\r\n\r\n"),
+			data:            []byte("H©st: localhost:8080\r\n\r\n"),
 			expectedHeaders: Headers{M: map[string]string{}},
 			expectError:     true,
 		},
