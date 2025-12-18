@@ -1,8 +1,8 @@
 package response
 
 import (
-	"bytes"
 	"crypto/sha256"
+	"net/http"
 	"testing"
 
 	"github.com/abdo-355/http-from-tcp/internal/headers"
@@ -13,62 +13,66 @@ import (
 func TestWriteStatusLine(t *testing.T) {
 	testCases := []struct {
 		name         string
-		statusCode   StatusCode
+		statusCode   int
+		statusText   string
 		expectedData string
-		expectError  bool
+		doPanic      bool
 		initialState WriterState
 	}{
 		{
 			name:         "Status OK",
-			statusCode:   StatusOk,
+			statusCode:   http.StatusOK,
+			statusText:   "OK",
 			expectedData: "HTTP/1.1 200 OK\r\n",
-			expectError:  false,
+			doPanic:      false,
 			initialState: WriteStatusLine,
 		},
 		{
 			name:         "Status Bad Request",
-			statusCode:   StatusBadRequest,
+			statusCode:   http.StatusBadRequest,
+			statusText:   "Bad Request",
 			expectedData: "HTTP/1.1 400 Bad Request\r\n",
-			expectError:  false,
+			doPanic:      false,
 			initialState: WriteStatusLine,
 		},
 		{
 			name:         "Status Internal Server Error",
-			statusCode:   StatusInternalServerError,
+			statusCode:   http.StatusInternalServerError,
+			statusText:   "Internal Server Error",
 			expectedData: "HTTP/1.1 500 Internal Server Error\r\n",
-			expectError:  false,
+			doPanic:      false,
 			initialState: WriteStatusLine,
 		},
 		{
 			name:         "Custom status code",
 			statusCode:   404,
-			expectedData: "HTTP/1.1 404\r\n",
-			expectError:  false,
+			statusText:   "Not Found",
+			expectedData: "HTTP/1.1 404 Not Found\r\n",
+			doPanic:      false,
 			initialState: WriteStatusLine,
 		},
 		{
 			name:         "Invalid state",
-			statusCode:   StatusOk,
+			statusCode:   http.StatusOK,
+			statusText:   "OK",
 			expectedData: "",
-			expectError:  true,
+			doPanic:      true,
 			initialState: WriteHeaders,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			buf := &bytes.Buffer{}
-			w := &Writer{
-				Conn:  buf,
-				State: tc.initialState,
-			}
+			w := New()
+			w.State = tc.initialState
 
-			err := w.WriteStatusLine(tc.statusCode)
-			if tc.expectError {
-				require.Error(t, err)
+			if tc.doPanic {
+				assert.Panics(t, func() {
+					w.WriteStatusLine("HTTP/1.1", tc.statusCode, tc.statusText)
+				})
 			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tc.expectedData, buf.String())
+				w.WriteStatusLine("HTTP/1.1", tc.statusCode, tc.statusText)
+				assert.Equal(t, tc.expectedData, w.buffer.String())
 				assert.Equal(t, WriteHeaders, w.State)
 			}
 		})
@@ -118,7 +122,7 @@ func TestWriteHeaders(t *testing.T) {
 		name         string
 		headers      headers.Headers
 		expectLines  []string
-		expectError  bool
+		doPanic      bool
 		initialState WriterState
 	}{
 		{
@@ -129,8 +133,8 @@ func TestWriteHeaders(t *testing.T) {
 					"host":         "example.com",
 				},
 			},
-			expectLines:  []string{"content-type: application/json", "host: example.com", ""},
-			expectError:  false,
+			expectLines:  []string{"content-type: application/json\r\n", "host: example.com\r\n", "\r\n"},
+			doPanic:      false,
 			initialState: WriteHeaders,
 		},
 		{
@@ -138,8 +142,8 @@ func TestWriteHeaders(t *testing.T) {
 			headers: headers.Headers{
 				M: map[string]string{},
 			},
-			expectLines:  []string{""},
-			expectError:  false,
+			expectLines:  []string{"\r\n"},
+			doPanic:      false,
 			initialState: WriteHeaders,
 		},
 		{
@@ -148,32 +152,25 @@ func TestWriteHeaders(t *testing.T) {
 				M: map[string]string{"test": "value"},
 			},
 			expectLines:  nil,
-			expectError:  true,
+			doPanic:      true,
 			initialState: WriteStatusLine,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			buf := &bytes.Buffer{}
-			w := &Writer{
-				Conn:  buf,
-				State: tc.initialState,
-			}
+			w := New()
+			w.State = tc.initialState
 
-			err := w.WriteHeaders(tc.headers)
-			if tc.expectError {
-				require.Error(t, err)
+			if tc.doPanic {
+				assert.Panics(t, func() {
+					w.WriteHeaders(tc.headers)
+				})
 			} else {
-				require.NoError(t, err)
-				lines := bytes.Split(buf.Bytes(), []byte("\r\n"))
-				var actualLines []string
-				for _, line := range lines {
-					actualLines = append(actualLines, string(line))
-				}
+				w.WriteHeaders(tc.headers)
 				// Since map order is random, check that all expected lines are present
 				for _, expected := range tc.expectLines {
-					assert.Contains(t, actualLines, expected)
+					assert.Contains(t, w.buffer.String(), expected)
 				}
 				assert.Equal(t, WriteBody, w.State)
 			}
@@ -186,65 +183,58 @@ func TestWriteBody(t *testing.T) {
 		name         string
 		body         []byte
 		expectedData string
-		expectError  bool
+		doPanic      bool
 		initialState WriterState
 	}{
 		{
 			name:         "Valid body",
 			body:         []byte("hello world"),
 			expectedData: "hello world",
-			expectError:  false,
+			doPanic:      false,
 			initialState: WriteBody,
 		},
 		{
 			name:         "Empty body",
 			body:         []byte(""),
 			expectedData: "",
-			expectError:  false,
+			doPanic:      false,
 			initialState: WriteBody,
 		},
 		{
 			name:         "Invalid state",
 			body:         []byte("test"),
 			expectedData: "",
-			expectError:  true,
+			doPanic:      true,
 			initialState: WriteStatusLine,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			buf := &bytes.Buffer{}
-			w := &Writer{
-				Conn:  buf,
-				State: tc.initialState,
-			}
-
-			n, err := w.WriteBody(tc.body)
-			if tc.expectError {
-				require.Error(t, err)
+			w := New()
+			w.State = tc.initialState
+			if tc.doPanic {
+				assert.Panics(t, func() {
+					w.WriteBody(tc.body)
+				})
 			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tc.expectedData, buf.String())
-				assert.Equal(t, len(tc.body), n)
+				w.WriteBody(tc.body)
+				assert.Equal(t, tc.expectedData, w.buffer.String())
 			}
 		})
 	}
 }
 
 func TestWriteChunkedBody(t *testing.T) {
-	buf := &bytes.Buffer{}
-	w := &Writer{
-		Conn:  buf,
-		State: WriteBody, // Assume it's in body writing state for chunked
-	}
+	w := New()
+	w.State = WriteBody // Assume it's in body writing state for chunked
 	h := sha256.New()
 
 	data := []byte("hello world")
 	n, err := w.WriteChunkedBody(data, h)
 	require.NoError(t, err)
 	assert.Equal(t, 16, n) // "b\r\nhello world\r\n" is 16 bytes
-	assert.Equal(t, "b\r\nhello world\r\n", buf.String())
+	assert.Equal(t, "b\r\nhello world\r\n", w.buffer.String())
 
 	// Check hash
 	expectedHash := sha256.Sum256(data)
@@ -253,16 +243,13 @@ func TestWriteChunkedBody(t *testing.T) {
 }
 
 func TestWriteChunkedBodyDone(t *testing.T) {
-	buf := &bytes.Buffer{}
-	w := &Writer{
-		Conn:  buf,
-		State: WriteBody,
-	}
+	w := New()
+	w.State = WriteBody
 
 	n, err := w.WriteChunkedBodyDone()
 	require.NoError(t, err)
 	assert.Equal(t, 3, n) // "0\r\n"
-	assert.Equal(t, "0\r\n", buf.String())
+	assert.Equal(t, "0\r\n", w.buffer.String())
 	assert.Equal(t, WriteTrailers, w.State)
 }
 
@@ -307,18 +294,15 @@ func TestWriteTrailers(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			buf := &bytes.Buffer{}
-			w := &Writer{
-				Conn:  buf,
-				State: tc.initialState,
-			}
+			w := New()
+			w.State = tc.initialState
 
 			err := w.WriteTrailers(tc.trailers)
 			if tc.expectError {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
-				assert.Equal(t, tc.expectedData, buf.String())
+				assert.Equal(t, tc.expectedData, w.buffer.String())
 			}
 		})
 	}

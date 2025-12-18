@@ -57,6 +57,9 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		buf = growBuffer(buf, bufferOffset)
 		bytesRead, err := reader.Read(buf[bufferOffset:])
 		if err == io.EOF {
+			if r.state == Initialized {
+				return nil, fmt.Errorf("unexpected EOF")
+			}
 			switch r.state {
 			case ParsingHeaders:
 				return nil, fmt.Errorf("unexpected EOF while parsing headers")

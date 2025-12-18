@@ -5,6 +5,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -44,110 +45,27 @@ func main() {
 func handler(w *response.Writer, req *request.Request) {
 	target := req.RequestLine.RequestTarget
 	if strings.HasPrefix(target, "/httpbin/") {
-		target = strings.TrimPrefix(target, "/httpbin")
-
-		res, err := http.Get("https://httpbin.org" + target)
-		if err != nil {
-			log.Fatal("error requesting the target:", err.Error())
-		}
-		defer res.Body.Close()
-
-		w.WriteStatusLine(response.StatusOk)
-
-		h := headers.NewHeaders()
-		h.Set("content-type", "text/html")
-		h.Set("transfer-encoding", "chunked")
-		h.Set("Trailer", "X-Content-SHA256, X-Content-Length")
-		w.WriteHeaders(h)
-
-		buff := make([]byte, 1024)
-		cl := 0
-		hash := sha256.New()
-		for {
-			n, err := res.Body.Read(buff)
-			if n > 0 {
-				_, err = w.WriteChunkedBody(buff[:n], hash)
-				if err != nil {
-					log.Fatal("error writing chunked body:", err)
-				}
-			}
-
-			cl += n
-
-			if err == io.EOF {
-				w.WriteChunkedBodyDone()
-				break
-			}
-
-			if err != nil {
-				log.Fatal(err.Error())
-			}
-		}
-
-		hashValue := hash.Sum(nil)
-
-		t := headers.NewHeaders()
-
-		t.SetTrailer("X-Content-Sha256", hex.EncodeToString(hashValue))
-		t.SetTrailer("X-Content-Length", strconv.Itoa(cl))
-		w.WriteTrailers(t)
-
+		handleHttpbinProxy(w, req)
 		return
 	}
 
 	if target == "/video" && req.RequestLine.Method == "GET" {
-		data, err := os.ReadFile("./assets/vim.mp4")
-		if err != nil {
-			log.Fatal("error reading the file:", err)
-		}
-
-		h := headers.NewHeaders()
-		h.Set("content-type", "video/mp4")
-		h.Set("content-length", strconv.Itoa(len(data)))
-		h.Set("connection", "close")
-		w.WriteStatusLine(response.StatusOk)
-		w.WriteHeaders(h)
-		w.WriteBody(data)
-
+		handleVideo(w)
 		return
 	}
 
-	var status response.StatusCode
+	var status int
 	var html string
 	switch target {
 	case "/yourproblem":
-		status = response.StatusBadRequest
-		html = `<html>
-  <head>
-    <title>400 Bad Request</title>
-  </head>
-  <body>
-    <h1>Bad Request</h1>
-    <p>Your request honestly kinda sucked.</p>
-  </body>
-</html>`
+		status = http.StatusBadRequest
+		html = `<html><head><title>400 Bad Request</title></head><body><h1>Bad Request</h1><p>Your request honestly kinda sucked.</p></body></html>`
 	case "/myproblem":
-		status = response.StatusInternalServerError
-		html = `<html>
-  <head>
-    <title>500 Internal Server Error</title>
-  </head>
-  <body>
-    <h1>Internal Server Error</h1>
-    <p>Okay, you know what? This one is on me.</p>
-  </body>
-</html>`
+		status = http.StatusInternalServerError
+		html = `<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p>Okay, you know what? This one is on me.</p></body></html>`
 	default:
-		status = response.StatusOk
-		html = `<html>
-  <head>
-    <title>200 OK</title>
-  </head>
-  <body>
-    <h1>Success!</h1>
-    <p>Your request was an absolute banger.</p>
-  </body>
-</html>`
+		status = http.StatusOK
+		html = `<html><head><title>200 OK</title></head><body><h1>Success!</h1><p>Your request was an absolute banger.</p></body></html>`
 	}
 
 	body := []byte(html)
@@ -155,7 +73,97 @@ func handler(w *response.Writer, req *request.Request) {
 	h.Set("content-type", "text/html")
 	h.Set("content-length", strconv.Itoa(len(body)))
 	h.Set("connection", "close")
-	w.WriteStatusLine(status)
+	w.WriteStatusLine("HTTP/1.1", status, http.StatusText(status))
 	w.WriteHeaders(h)
 	w.WriteBody(body)
+}
+
+func handleHttpbinProxy(w *response.Writer, req *request.Request) {
+	target := strings.TrimPrefix(req.RequestLine.RequestTarget, "/httpbin")
+	proxyRes, err := http.Get("https://httpbin.org" + target)
+	if err != nil {
+		sendInternalServerError(w, err)
+		return
+	}
+	defer proxyRes.Body.Close()
+
+	w.WriteStatusLine("HTTP/1.1", http.StatusOK, "OK")
+
+	h := headers.NewHeaders()
+	h.Set("content-type", "text/html")
+	h.Set("transfer-encoding", "chunked")
+	h.Set("Trailer", "X-Content-SHA256, X-Content-Length")
+	w.WriteHeaders(h)
+
+	buff := make([]byte, 1024)
+	cl := 0
+	hash := sha256.New()
+	for {
+		n, err := proxyRes.Body.Read(buff)
+		if n > 0 {
+			if _, err := w.WriteChunkedBody(buff[:n], hash); err != nil {
+				sendInternalServerError(w, fmt.Errorf("error writing chunked body: %w", err))
+				return
+			}
+		}
+
+		cl += n
+
+		if err == io.EOF {
+			w.WriteChunkedBodyDone()
+			break
+		}
+
+		if err != nil {
+			sendInternalServerError(w, fmt.Errorf("error reading proxy response: %w", err))
+			return
+		}
+	}
+
+	hashValue := hash.Sum(nil)
+	t := headers.NewHeaders()
+	t.SetTrailer("X-Content-Sha256", hex.EncodeToString(hashValue))
+	t.SetTrailer("X-Content-Length", strconv.Itoa(cl))
+	if err := w.WriteTrailers(t); err != nil {
+		sendInternalServerError(w, fmt.Errorf("error writing trailers: %w", err))
+		return
+	}
+}
+
+func handleVideo(w *response.Writer) {
+	data, err := os.ReadFile("./assets/vim.mp4")
+	if err != nil {
+		sendErrorResponse(w, http.StatusNotFound, "video not found", err)
+		return
+	}
+
+	h := headers.NewHeaders()
+	h.Set("content-type", "video/mp4")
+	h.Set("content-length", strconv.Itoa(len(data)))
+	h.Set("connection", "close")
+	w.WriteStatusLine("HTTP/1.1", http.StatusOK, "OK")
+	w.WriteHeaders(h)
+	w.WriteBody(data)
+}
+
+func sendInternalServerError(w *response.Writer, err error) {
+	log.Printf("Internal Server Error: %v", err)
+	sendErrorResponse(w, http.StatusInternalServerError, "Internal Server Error", err)
+}
+
+func sendErrorResponse(w *response.Writer, statusCode int, message string, err error) {
+	statusText := http.StatusText(statusCode)
+	if statusText == "" {
+		statusText = "Unknown"
+	}
+
+	errorBody := fmt.Sprintf("%d %s: %s - %s", statusCode, statusText, message, err.Error())
+
+	w.WriteStatusLine("HTTP/1.1", statusCode, statusText)
+	h := headers.NewHeaders()
+	h.Set("content-type", "text/plain")
+	h.Set("content-length", strconv.Itoa(len(errorBody)))
+	h.Set("connection", "close")
+	w.WriteHeaders(h)
+	w.WriteBody([]byte(errorBody))
 }

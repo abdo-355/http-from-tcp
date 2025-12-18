@@ -2,12 +2,12 @@
 package server
 
 import (
-	"io"
-	"log"
+	"log/slog"
 	"net"
 	"strconv"
 	"sync/atomic"
 
+	"github.com/abdo-355/http-from-tcp/internal/httpwriter"
 	"github.com/abdo-355/http-from-tcp/internal/request"
 	"github.com/abdo-355/http-from-tcp/internal/response"
 )
@@ -19,24 +19,6 @@ type Server struct {
 }
 
 type Handler func(w *response.Writer, req *request.Request)
-
-type HandlerError struct {
-	Status  response.StatusCode
-	Message string
-}
-
-func (he *HandlerError) Write(w io.Writer) {
-	writer := response.Writer{
-		Conn: w,
-	}
-	writer.WriteStatusLine(he.Status)
-	msg := []byte(he.Message)
-
-	hdrs := response.GetDefaultHeaders(len(msg))
-
-	writer.WriteHeaders(hdrs)
-	writer.WriteBody(msg)
-}
 
 func Serve(port int, handler Handler) (*Server, error) {
 	listener, err := net.Listen("tcp", ":"+strconv.Itoa(port))
@@ -66,7 +48,12 @@ func (s *Server) listen() {
 	for s.state.Load() {
 		conn, err := s.Listener.Accept()
 		if err != nil {
-			log.Fatal("error accepting a connection on the listener:", err)
+			// If the server is closing, the error is expected.
+			if !s.state.Load() {
+				return
+			}
+			slog.Error("error accepting a connection on the listener:", "err", err)
+			continue
 		}
 		go s.handle(conn)
 	}
@@ -76,18 +63,15 @@ func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
 	req, err := request.RequestFromReader(conn)
 	if err != nil {
-		hErr := &HandlerError{
-			Status:  response.StatusBadRequest,
-			Message: err.Error(),
-		}
-
-		hErr.Write(conn)
+		slog.Warn("error parsing request", "err", err, "remote_addr", conn.RemoteAddr())
+		httpwriter.SendError(conn, 400)
 		return
 	}
 
-	w := response.Writer{
-		Conn: conn,
-	}
+	res := response.New()
+	s.handler(res, req)
 
-	s.handler(&w, req)
+	if err := httpwriter.Write(conn, res); err != nil {
+		slog.Error("error writing response", "err", err)
+	}
 }
