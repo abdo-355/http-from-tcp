@@ -1,6 +1,6 @@
 # HTTP-FROM-TCP
 
-`http-to-tcp` is a project that provides a from-scratch implementation of an HTTP/1.1 server in Go. It is designed to be an educational tool, showing how the HTTP protocol functions directly on top of TCP sockets.
+`http-from-tcp` is a project that provides a from-scratch implementation of an HTTP/1.1 server in Go. It is designed to be an educational tool, showing how the HTTP protocol functions directly on top of TCP sockets.
 
 The project includes a working web server, a diagnostic listener tool, and a set of internal packages that together form a lightweight and reusable HTTP library.
 
